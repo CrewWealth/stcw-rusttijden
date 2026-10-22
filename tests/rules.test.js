@@ -62,6 +62,18 @@ test('niet-ingevulde dagen geven geen valse waarschuwingen', () => {
   assert.equal(r['2026-10-08'].rest7, null);
 });
 
+test('5/3-wachten: alle drie de ploegen zijn in orde', async () => {
+  const { TEMPLATES, templateSlots } = await import('../js/templates.js');
+  for (const t of TEMPLATES.filter(t => t.id.startsWith('v53'))) {
+    const days = {};
+    for (let i = 0; i < 14; i++) days[addDays('2026-10-01', i)] = templateSlots(t);
+    for (const [iso, d] of Object.entries(analyse(days, '2026-10-08', '2026-10-14'))) {
+      assert.equal(d.status, 'groen', `${t.name} op ${iso}: ${d.issues.map(x => x.text).join(' ')}`);
+      assert.equal(d.restDay, 16);
+    }
+  }
+});
+
 test('werkperiodes als tekst', () => {
   assert.equal(workPeriodsText(day([[0, 4], [12, 16]])), '00:00-04:00 12:00-16:00');
   assert.equal(workPeriodsText(day([[20, 24]])), '20:00-24:00');
