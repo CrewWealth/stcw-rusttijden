@@ -1,0 +1,6 @@
+{
+  "name": "stcw-rusttijden",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test" }
+}
