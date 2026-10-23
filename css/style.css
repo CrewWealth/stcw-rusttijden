@@ -33,9 +33,9 @@ h3 { font-size: 15px; margin: 20px 0 6px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
 .card-label { color: var(--muted); font-size: 11.5px; }
 .card-value { font-size: 20px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
-.card.groen .card-value { color: var(--groen); }
-.card.oranje .card-value { color: var(--oranje); }
-.card.rood .card-value { color: var(--rood); }
+.card.ok .card-value { color: var(--groen); }
+.card.tight .card-value { color: var(--oranje); }
+.card.breach .card-value { color: var(--rood); }
 
 .week-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 8px; }
 .week-title { font-size: 14px; color: var(--muted); text-align: center; }
@@ -55,9 +55,9 @@ button.danger { color: var(--rood); margin-top: 18px; }
 .day-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .day-name { font-weight: 600; font-size: 14px; min-width: 78px; }
 .chip { font-size: 12px; padding: 3px 8px; border-radius: 99px; background: rgba(205, 214, 244, 0.08); color: var(--muted); font-variant-numeric: tabular-nums; }
-.chip.groen { color: var(--groen); background: rgba(166, 227, 161, 0.12); }
-.chip.oranje { color: var(--oranje); background: rgba(249, 201, 122, 0.12); }
-.chip.rood { color: var(--rood); background: rgba(243, 139, 168, 0.14); }
+.chip.ok { color: var(--groen); background: rgba(166, 227, 161, 0.12); }
+.chip.tight { color: var(--oranje); background: rgba(249, 201, 122, 0.12); }
+.chip.breach { color: var(--rood); background: rgba(243, 139, 168, 0.14); }
 .day-menu { margin-left: auto; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; font-size: 13px; max-width: 120px; }
 
 .bar { position: relative; display: grid; grid-template-columns: repeat(48, 1fr); height: 34px; border-radius: 8px; overflow: hidden; touch-action: pan-y; user-select: none; cursor: crosshair; background: var(--rest); gap: 1px; }
@@ -94,7 +94,7 @@ table.register { border-collapse: collapse; font-size: 9.5px; font-variant-numer
 .register td.s.none { background: repeating-linear-gradient(45deg, #eee 0 2px, #fff 2px 4px); }
 .register td.date { white-space: nowrap; }
 .register td.num, .register td.ok { text-align: center; }
-.register tr.rood td.ok { color: #c00; font-weight: 700; }
+.register tr.breach td.ok { color: #c00; font-weight: 700; }
 .register td.rem { font-size: 8.5px; min-width: 160px; }
 .reg-legend { font-size: 10px; color: #444; margin: 6px 0 0; }
 .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 36px; font-size: 11px; }
@@ -105,6 +105,11 @@ nav button { background: none; border: 0; display: flex; flex-direction: column;
 nav button svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 nav button.active { color: var(--accent); }
 
+.warnings { background: rgba(243, 139, 168, 0.10); border: 1px solid rgba(243, 139, 168, 0.45); border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; }
+.warnings-title { color: var(--rood); font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+.warning { font-size: 13px; padding: 4px 0; }
+.warning strong { color: var(--text); }
+.warning-text { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
 #print-area { display: none; }
 @media (max-width: 420px) { .card-value { font-size: 17px; } .day-name { min-width: 64px; } }
 @media print {

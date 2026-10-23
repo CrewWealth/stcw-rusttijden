@@ -1,4 +1,5 @@
-// Alles blijft op je eigen toestel (localStorage). Met "Back-up" in Profiel kun je het opslaan als bestand.
+// Everything stays on your own device (localStorage). Use "Download backup" under Profile to save it as a file.
+// (Key and file format unchanged, so existing data and backups keep working.)
 
 const KEY = 'stcw-rusttijden-v1';
 

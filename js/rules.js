@@ -1,8 +1,8 @@
-// Rekenregels voor rusttijden volgens STCW Code A-VIII/1 en MLC 2006 (norm A2.3).
+// Hours of rest rules according to STCW Code A-VIII/1 and MLC 2006 (standard A2.3).
+// (Uitleg: een dag = 48 vakjes van een half uur, 0 = rust, 1 = werk. Dagen zonder invoer
+// tellen niet mee, zodat je geen valse waarschuwingen krijgt voor dagen die nog leeg zijn.)
 //
-// Een dag bestaat uit 48 vakjes van een half uur: 0 = rust, 1 = werk.
-// Dagen zonder invoer tellen niet mee: een controlevenster dat zo'n dag raakt slaan we over,
-// zodat je geen valse waarschuwingen krijgt voor dagen die je nog niet hebt ingevuld.
+// Statuses: 'empty' (not filled in), 'ok', 'tight' (allowed but close), 'breach'.
 
 export const SLOTS_PER_DAY = 48;
 export const SLOT_HOURS = 0.5;
@@ -15,7 +15,7 @@ export const RULES = {
   maxWorkStretch: 14, // hoogstens 14 uur tussen twee rustperiodes
 };
 
-// Onder deze grenzen is het nog toegestaan, maar krap: dan kleurt de dag oranje.
+// Below these limits it is still allowed, but tight (orange).
 export const MARGIN = { rest24h: 11, rest7d: 80 };
 
 const DAY = SLOTS_PER_DAY;
@@ -83,7 +83,7 @@ export function analyse(days, fromIso, toIso) {
   for (let iso = fromIso; daysBetween(iso, toIso) >= 0; iso = addDays(iso, 1)) {
     const d0 = daysBetween(start, iso) * DAY;
     if (!days[iso]) {
-      results[iso] = { status: 'leeg', issues: [] };
+      results[iso] = { status: 'empty', issues: [] };
       continue;
     }
     const issues = [];
@@ -114,12 +114,12 @@ export function analyse(days, fromIso, toIso) {
       }
     }
     if (min24 < RULES.minRest24h) {
-      issues.push({ rule: 'rest24h', text: `Minder dan ${RULES.minRest24h} uur rust in 24 uur: ${fmt(min24)} u ${windowText(min24At)}.` });
+      issues.push({ rule: 'rest24h', text: `Less than ${RULES.minRest24h} h rest in 24 h: ${fmt(min24)} h ${windowText(min24At)}.` });
     }
     if (blocksIssue) {
       issues.push({
         rule: 'periods',
-        text: `Rust niet in hoogstens ${RULES.maxRestPeriods} blokken met één van minstens ${RULES.minLongestPeriod} uur ${windowText(blocksIssue.from)}: twee langste blokken samen ${fmt(blocksIssue.twoLongest)} u, langste ${fmt(blocksIssue.longest)} u.`,
+        text: `Rest not in max. ${RULES.maxRestPeriods} periods with one of at least ${RULES.minLongestPeriod} h ${windowText(blocksIssue.from)}: two longest periods ${fmt(blocksIssue.twoLongest)} h together, longest ${fmt(blocksIssue.longest)} h.`,
       });
     }
 
@@ -130,7 +130,7 @@ export function analyse(days, fromIso, toIso) {
     }
     const rest7 = complete(d0 + DAY - WEEK, d0 + DAY) ? restIn(d0 + DAY - WEEK, d0 + DAY) * SLOT_HOURS : null;
     if (min7 < RULES.minRest7d) {
-      issues.push({ rule: 'rest7d', text: `Minder dan ${RULES.minRest7d} uur rust in 7 dagen: ${fmt(min7)} u.` });
+      issues.push({ rule: 'rest7d', text: `Less than ${RULES.minRest7d} h rest in 7 days: ${fmt(min7)} h.` });
     }
 
     // 4) Langste aaneengesloten werkperiode die deze dag raakt.
@@ -143,12 +143,12 @@ export function analyse(days, fromIso, toIso) {
       maxWork = Math.max(maxWork, (b - a) * SLOT_HOURS);
     }
     if (maxWork > RULES.maxWorkStretch) {
-      issues.push({ rule: 'work', text: `Meer dan ${RULES.maxWorkStretch} uur zonder rustperiode: ${fmt(maxWork)} u.` });
+      issues.push({ rule: 'work', text: `More than ${RULES.maxWorkStretch} h between rest periods: ${fmt(maxWork)} h.` });
     }
 
     const tight = min24 < MARGIN.rest24h || (Number.isFinite(min7) && min7 < MARGIN.rest7d);
     results[iso] = {
-      status: issues.length ? 'rood' : tight ? 'oranje' : 'groen',
+      status: issues.length ? 'breach' : tight ? 'tight' : 'ok',
       restDay,
       min24: Number.isFinite(min24) ? min24 : null,
       rest7,
@@ -162,9 +162,39 @@ export function analyse(days, fromIso, toIso) {
 
 // "in de 24 uur van 14:30 tot 14:30 de volgende dag" of "op deze dag (00:00-24:00)"
 function windowText(slot) {
-  return slot % DAY ? `in de 24 uur van ${slotToTime(slot)} tot ${slotToTime(slot)} de volgende dag` : 'op deze dag (00:00-24:00)';
+  return slot % DAY ? `in the 24 h from ${slotToTime(slot)} to ${slotToTime(slot)} next day` : 'on this day (00:00-24:00)';
 }
 
 export function fmt(h) {
-  return Number.isInteger(h) ? String(h) : h.toFixed(1).replace('.', ',');
+  return Number.isInteger(h) ? String(h) : h.toFixed(1);
+}
+
+// ---------- advance warning ----------
+// Looks ahead in the planned roster and returns one warning per run of consecutive breach days.
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "Thu 22 Oct" */
+export function shortDate(iso) {
+  const d = new Date(iso + 'T00:00:00Z');
+  return `${DAY_NAMES[d.getUTCDay()]} ${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()]}`;
+}
+
+export function upcomingWarnings(days, todayIso, horizonDays = 14) {
+  const res = analyse(days, todayIso, addDays(todayIso, horizonDays));
+  const groups = [];
+  for (let d = 0; d <= horizonDays; d++) {
+    if (res[addDays(todayIso, d)].status !== 'breach') continue;
+    const last = groups[groups.length - 1];
+    if (last && last[last.length - 1] === d - 1) last.push(d); else groups.push([d]);
+  }
+  const name = (d, iso) => (d === 0 ? 'today' : d === 1 ? 'tomorrow' : shortDate(iso));
+  return groups.map(g => {
+    const a = g[0], b = g[g.length - 1], first = addDays(todayIso, a), last = addDays(todayIso, b);
+    const issues = g.flatMap(d => res[addDays(todayIso, d)].issues);
+    const main = issues.find(i => i.rule === 'rest24h') || issues[0];
+    const when = a === b ? name(a, first) : a === 0 && b === 1 ? 'today and tomorrow' : `${name(a, first)} to ${name(b, last)}`;
+    return { day: first, lastDay: last, title: `Not enough rest ${when}`, text: main.text };
+  });
 }

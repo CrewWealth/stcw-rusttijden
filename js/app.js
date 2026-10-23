@@ -1,6 +1,6 @@
-// De schermen van de app. Alle rekenwerk zit in rules.js; dit bestand tekent alleen en verwerkt invoer.
+// The screens of the app. All calculations live in rules.js; this file only draws and handles input.
 
-import { analyse, addDays, daysBetween, fmt, workPeriodsText, RULES, MARGIN } from './rules.js';
+import { analyse, addDays, daysBetween, fmt, workPeriodsText, upcomingWarnings, RULES, MARGIN } from './rules.js';
 import { TEMPLATES, templateSlots } from './templates.js';
 import * as store from './storage.js';
 
@@ -8,9 +8,9 @@ const state = store.load();
 const view = document.getElementById('view');
 const printArea = document.getElementById('print-area');
 
-const DAYS = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
-const MONTHS = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december'];
-const STATUS_TEXT = { groen: 'In orde', oranje: 'Krap', rood: 'Overtreding', leeg: 'Niet ingevuld' };
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const STATUS_TEXT = { ok: 'OK', tight: 'Tight', breach: 'Breach', empty: 'Not filled in' };
 
 const pad = n => String(n).padStart(2, '0');
 const localIso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -79,43 +79,55 @@ function weekView() {
   const todayRes = analyse(store.daysAsSlots(state), today(), today())[today()];
 
   const card = (label, value, cls) => h('div', { class: `card ${cls || ''}` }, h('div', { class: 'card-label' }, label), h('div', { class: 'card-value' }, value));
-  const cls24 = r24 == null ? '' : r24 < RULES.minRest24h ? 'rood' : r24 < MARGIN.rest24h ? 'oranje' : 'groen';
-  const cls7 = r7 == null ? '' : r7 < RULES.minRest7d ? 'rood' : r7 < MARGIN.rest7d ? 'oranje' : 'groen';
+  const cls24 = r24 == null ? '' : r24 < RULES.minRest24h ? 'breach' : r24 < MARGIN.rest24h ? 'tight' : 'ok';
+  const cls7 = r7 == null ? '' : r7 < RULES.minRest7d ? 'breach' : r7 < MARGIN.rest7d ? 'tight' : 'ok';
 
   const wrap = h('section', {},
     h('div', { class: 'cards' },
-      card('Rust afgelopen 24 u', r24 == null ? '–' : `${fmt(r24)} u`, cls24),
-      card('Rust afgelopen 7 d', r7 == null ? '–' : `${fmt(r7)} u`, cls7),
-      card('Vandaag', STATUS_TEXT[todayRes.status], todayRes.status),
+      card('Rest last 24 h', r24 == null ? '–' : `${fmt(r24)} h`, cls24),
+      card('Rest last 7 days', r7 == null ? '–' : `${fmt(r7)} h`, cls7),
+      card('Today', STATUS_TEXT[todayRes.status], todayRes.status),
     ),
+    warningsCard(),
     h('div', { class: 'week-nav' },
-      h('button', { class: 'icon', 'aria-label': 'Vorige week', onclick: () => { weekStart = addDays(weekStart, -7); render(); } }, '‹'),
+      h('button', { class: 'icon', 'aria-label': 'Previous week', onclick: () => { weekStart = addDays(weekStart, -7); render(); } }, '‹'),
       h('div', { class: 'week-title' }, h('strong', {}, `Week ${isoWeek(weekStart)}`), ` · ${shortDate(weekStart)} – ${shortDate(end)}`),
-      h('button', { class: 'icon', 'aria-label': 'Volgende week', onclick: () => { weekStart = addDays(weekStart, 7); render(); } }, '›'),
+      h('button', { class: 'icon', 'aria-label': 'Next week', onclick: () => { weekStart = addDays(weekStart, 7); render(); } }, '›'),
     ),
     h('div', { class: 'ruler' }, ...['00', '06', '12', '18', '24'].map((t, i) => h('span', { style: `left:${i * 25}%` }, t))),
   );
 
   for (let i = 0; i < 7; i++) {
     const iso = addDays(weekStart, i), r = res[iso], slots = getDay(iso);
-    const select = h('select', { class: 'day-menu', 'aria-label': `Opties voor ${shortDate(iso)}`, onchange: e => dayAction(iso, e.target.value) },
+    const select = h('select', { class: 'day-menu', 'aria-label': `Options for ${shortDate(iso)}`, onchange: e => dayAction(iso, e.target.value) },
       h('option', { value: '' }, '⋯'),
       ...TEMPLATES.map(t => h('option', { value: `t:${t.id}` }, t.name)),
-      h('option', { value: 'copy' }, 'Kopieer vorige dag'),
-      h('option', { value: 'clear' }, 'Leegmaken'),
+      h('option', { value: 'copy' }, 'Copy previous day'),
+      h('option', { value: 'clear' }, 'Clear'),
     );
     wrap.append(h('div', { class: `day ${iso === today() ? 'is-today' : ''}` },
       h('div', { class: 'day-head' },
         h('span', { class: 'day-name' }, shortDate(iso)),
-        h('span', { class: `chip ${r.status}` }, r.status === 'leeg' ? 'leeg' : `${fmt(r.restDay)} u rust`),
+        h('span', { class: `chip ${r.status}` }, r.status === 'empty' ? 'empty' : `${fmt(r.restDay)} h rest`),
         select,
       ),
       dayBar(iso, slots),
       r.issues.length ? h('ul', { class: 'issues' }, r.issues.map(x => h('li', {}, x.text))) : null,
     ));
   }
-  wrap.append(h('p', { class: 'hint' }, 'Sleep over een balk om werk (oranje) of rust (blauw) in te tekenen. Elk vakje is een half uur.'));
+  wrap.append(h('p', { class: 'hint' }, 'Drag across a bar to mark work (orange) or rest (blue). Each block is half an hour.'));
   return wrap;
+}
+
+// Advance warning: looks ahead in your planned roster (next 14 days).
+function warningsCard() {
+  const warnings = upcomingWarnings(store.daysAsSlots(state), today());
+  if (!warnings.length) return null;
+  return h('div', { class: 'warnings' },
+    h('div', { class: 'warnings-title' }, '⚠ Advance warning'),
+    warnings.map(w => h('div', { class: 'warning' },
+      h('strong', {}, w.title), h('div', { class: 'warning-text' }, w.text))),
+  );
 }
 
 function dayAction(iso, action) {
@@ -127,13 +139,13 @@ function dayAction(iso, action) {
 
 // Balk van 48 vakjes waarop je met vinger of muis werk/rust tekent.
 function dayBar(iso, slots) {
-  const bar = h('div', { class: `bar ${slots ? '' : 'empty'}`, role: 'group', 'aria-label': `Uren van ${shortDate(iso)}` });
+  const bar = h('div', { class: `bar ${slots ? '' : 'empty'}`, role: 'group', 'aria-label': `Hours of ${shortDate(iso)}` });
   const cells = [];
   for (let i = 0; i < 48; i++) {
     const c = h('span', { class: `cell ${slots && slots[i] ? 'work' : ''} ${i % 12 === 0 ? 'tick' : ''}` });
     cells.push(c); bar.append(c);
   }
-  if (!slots) bar.append(h('span', { class: 'bar-empty' }, 'Tik of sleep om in te vullen'));
+  if (!slots) bar.append(h('span', { class: 'bar-empty' }, 'Tap or drag to fill in'));
 
   let paint = null, lastIdx = -1, current = slots ? [...slots] : null;
   const idxAt = e => {
@@ -175,32 +187,32 @@ function rosterView() {
   const msg = h('p', { class: 'hint' });
   const applyBtn = h('button', { class: 'primary', onclick: () => {
     const a = from.value, b = to.value;
-    if (!a || !b || daysBetween(a, b) < 0) { msg.textContent = 'Kies een geldige periode.'; return; }
+    if (!a || !b || daysBetween(a, b) < 0) { msg.textContent = 'Choose a valid period.'; return; }
     const n = daysBetween(a, b) + 1;
     let filled = 0;
     for (let i = 0; i < n; i++) if (state.days[addDays(a, i)]) filled++;
-    if (filled && !confirm(`${filled} van de ${n} dagen zijn al ingevuld en worden overschreven. Doorgaan?`)) return;
+    if (filled && !confirm(`${filled} of the ${n} days are already filled in and will be overwritten. Continue?`)) return;
     const slots = templateSlots(TEMPLATES.find(t => t.id === chosen));
     for (let i = 0; i < n; i++) state.days[addDays(a, i)] = store.pack(slots);
     store.save(state);
-    msg.textContent = `✓ ${n} dagen ingevuld. Afwijkingen (drills, overwerk) teken je daarna per dag in bij Week.`;
-  } }, 'Rooster toepassen');
+    msg.textContent = `✓ ${n} days filled in. Mark exceptions (drills, overtime) per day under Week.`;
+  } }, 'Apply schedule');
 
   return h('section', {},
-    h('h2', {}, 'Wachtrooster'),
-    h('p', { class: 'hint' }, 'Kies je wacht en de periode. Daarna pas je losse dagen aan in het weekoverzicht.'),
+    h('h2', {}, 'Watch schedule'),
+    h('p', { class: 'hint' }, 'Choose your watch and the period. Then adjust single days in the week view.'),
     list,
-    h('div', { class: 'row' }, h('label', {}, 'Van', from), h('label', {}, 'Tot en met', to)),
+    h('div', { class: 'row' }, h('label', {}, 'From', from), h('label', {}, 'To (incl.)', to)),
     applyBtn, msg,
     h('div', { class: 'rules' },
-      h('h3', {}, 'Wat de app controleert'),
+      h('h3', {}, 'What the app checks'),
       h('ul', {},
-        h('li', {}, `Minimaal ${RULES.minRest24h} uur rust in elke periode van 24 uur`),
-        h('li', {}, `Minimaal ${RULES.minRest7d} uur rust in elke periode van 7 dagen`),
-        h('li', {}, `Rust in hoogstens ${RULES.maxRestPeriods} blokken, waarvan één van minstens ${RULES.minLongestPeriod} uur`),
-        h('li', {}, `Hoogstens ${RULES.maxWorkStretch} uur tussen twee rustperiodes`),
+        h('li', {}, `At least ${RULES.minRest24h} hours of rest in any 24-hour period`),
+        h('li', {}, `At least ${RULES.minRest7d} hours of rest in any 7-day period`),
+        h('li', {}, `Rest in no more than ${RULES.maxRestPeriods} periods, one of at least ${RULES.minLongestPeriod} hours`),
+        h('li', {}, `No more than ${RULES.maxWorkStretch} hours between rest periods`),
       ),
-      h('p', { class: 'hint' }, 'Bron: STCW Code A-VIII/1 en MLC 2006 norm A2.3. Oranje = toegestaan maar krap (onder 11 u per 24 u of 80 u per week).'),
+      h('p', { class: 'hint' }, 'Source: STCW Code A-VIII/1 and MLC 2006 standard A2.3. Orange = allowed but tight (under 11 h per 24 h or 80 h per week).'),
     ),
   );
 }
@@ -216,13 +228,13 @@ function exportView() {
   update();
   const missing = ['name', 'ship', 'imo', 'flag'].filter(k => !state.profile[k]);
   return h('section', {},
-    h('h2', {}, 'Export voor inspectie'),
-    h('p', { class: 'hint' }, 'Maandoverzicht in de opzet van het IMO/ILO-register van rusturen. Laat het tekenen door jezelf en de kapitein.'),
-    missing.length ? h('p', { class: 'warn' }, 'Vul eerst je gegevens in bij Profiel (naam, schip, IMO-nummer, vlag).') : null,
-    h('div', { class: 'row' }, h('label', {}, 'Maand', month)),
+    h('h2', {}, 'Export for inspection'),
+    h('p', { class: 'hint' }, 'Monthly record in the IMO/ILO format for hours of rest. Have it signed by yourself and the master.'),
+    missing.length ? h('p', { class: 'warn' }, 'First fill in your details under Profile (name, ship, IMO number, flag).') : null,
+    h('div', { class: 'row' }, h('label', {}, 'Month', month)),
     h('div', { class: 'row buttons' },
-      h('button', { class: 'primary', onclick: () => { printArea.replaceChildren(monthTable(month.value, true)); window.print(); } }, 'Print / bewaar als PDF'),
-      h('button', { onclick: () => downloadCsv(month.value) }, 'CSV downloaden'),
+      h('button', { class: 'primary', onclick: () => { printArea.replaceChildren(monthTable(month.value, true)); window.print(); } }, 'Print / save as PDF'),
+      h('button', { onclick: () => downloadCsv(month.value) }, 'Download CSV'),
     ),
     preview,
   );
@@ -240,16 +252,16 @@ function monthTable(ym, forPrint = false) {
   const [y, m] = ym.split('-').map(Number);
   const p = state.profile;
   const head = h('div', { class: 'reg-head' },
-    h('h1', {}, 'Register van rusturen · Record of hours of rest'),
+    h('h1', {}, 'Record of hours of rest'),
     h('div', { class: 'reg-fields' },
-      ...[['Schip / Ship', p.ship], ['IMO', p.imo], ['Vlag / Flag', p.flag], ['Naam / Name', p.name], ['Functie / Rank', p.rank], ['Maand / Month', `${MONTHS[m - 1]} ${y}`]]
+      ...[['Ship', p.ship], ['IMO', p.imo], ['Flag', p.flag], ['Name', p.name], ['Rank', p.rank], ['Month', `${MONTHS[m - 1]} ${y}`]]
         .map(([k, v]) => h('div', {}, h('span', {}, k), h('strong', {}, v || '—'))),
     ),
   );
   const table = h('table', { class: 'register' });
-  const hr = h('tr', {}, h('th', {}, 'Datum'));
+  const hr = h('tr', {}, h('th', {}, 'Date'));
   for (let hh = 0; hh < 24; hh++) hr.append(h('th', { colspan: 2, class: 'hr' }, pad(hh)));
-  hr.append(h('th', {}, 'Rust 24 u'), h('th', {}, 'Rust 7 d'), h('th', {}, 'OK'), h('th', {}, 'Opmerkingen / Remarks'));
+  hr.append(h('th', {}, 'Rest 24 h'), h('th', {}, 'Rest 7 d'), h('th', {}, 'OK'), h('th', {}, 'Remarks'));
   table.append(h('thead', {}, hr));
   const body = h('tbody');
   for (const iso of days) {
@@ -259,29 +271,29 @@ function monthTable(ym, forPrint = false) {
     tr.append(
       h('td', { class: 'num' }, slots ? fmt(r.restDay) : ''),
       h('td', { class: 'num' }, r.rest7 != null ? fmt(r.rest7) : ''),
-      h('td', { class: 'ok' }, r.status === 'leeg' ? '' : r.status === 'rood' ? '✗' : '✓'),
+      h('td', { class: 'ok' }, r.status === 'empty' ? '' : r.status === 'breach' ? '✗' : '✓'),
       h('td', { class: 'rem' }, r.issues.map(x => x.text).join(' ')),
     );
     body.append(tr);
   }
   table.append(body);
-  const legend = h('p', { class: 'reg-legend' }, 'Gekleurd vakje = werk (hours of work), leeg vakje = rust (hours of rest). Elk vakje is 30 minuten. Gecontroleerd volgens STCW A-VIII/1 en MLC 2006.');
+  const legend = h('p', { class: 'reg-legend' }, 'Shaded block = hours of work, blank block = hours of rest. Each block is 30 minutes. Checked against STCW A-VIII/1 and MLC 2006.');
   const sign = forPrint ? h('div', { class: 'sign' },
-    h('div', {}, 'Handtekening zeevarende / Seafarer'), h('div', {}, 'Handtekening kapitein of gemachtigde / Master or authorised person')) : null;
+    h('div', {}, 'Signature of seafarer'), h('div', {}, 'Signature of master or authorised person')) : null;
   return h('div', { class: 'register-wrap' }, head, table, legend, sign);
 }
 
 function downloadCsv(ym) {
   const days = monthDays(ym);
   const res = analyse(store.daysAsSlots(state), days[0], days[days.length - 1]);
-  const rows = [['datum', 'rust_dag_u', 'rust_7_dagen_u', 'laagste_rust_24u', 'status', 'werkperiodes', 'opmerkingen']];
+  const rows = [['date', 'rest_day_h', 'rest_7_days_h', 'lowest_rest_24h', 'status', 'work_periods', 'remarks']];
   for (const iso of days) {
     const r = res[iso], s = getDay(iso);
     rows.push([iso, s ? fmt(r.restDay) : '', r.rest7 != null ? fmt(r.rest7) : '', r.min24 != null ? fmt(r.min24) : '',
       STATUS_TEXT[r.status], s ? workPeriodsText(s) : '', r.issues.map(x => x.text).join(' ')]);
   }
   const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
-  download(new Blob(['﻿' + csv], { type: 'text/csv' }), `rusturen-${ym}.csv`);
+  download(new Blob(['﻿' + csv], { type: 'text/csv' }), `hours-of-rest-${ym}.csv`);
 }
 
 function download(blob, name) {
@@ -299,24 +311,24 @@ function profileView() {
     const f = e.target.files[0]; if (!f) return;
     try {
       const data = store.importBackup(await f.text());
-      if (!confirm(`Back-up met ${Object.keys(data.days).length} dagen terugzetten? Je huidige gegevens worden vervangen.`)) return;
+      if (!confirm(`Restore backup with ${Object.keys(data.days).length} days? Your current data will be replaced.`)) return;
       Object.assign(state, data); store.save(state); render();
     } catch (err) { alert(err.message); }
   } });
   return h('section', {},
-    h('h2', {}, 'Profiel'),
-    h('p', { class: 'hint' }, 'Deze gegevens komen bovenaan je export.'),
-    field('name', 'Naam'), field('rank', 'Functie'), field('ship', 'Schip'),
-    field('imo', 'IMO-nummer', { inputmode: 'numeric' }), field('flag', 'Vlag'),
-    h('h3', {}, 'Gegevens'),
-    h('p', { class: 'hint' }, `${Object.keys(state.days).length} dagen ingevuld. Alles staat alleen op dit toestel: maak af en toe een back-up.`),
+    h('h2', {}, 'Profile'),
+    h('p', { class: 'hint' }, 'These details appear at the top of your export.'),
+    field('name', 'Name'), field('rank', 'Rank'), field('ship', 'Ship'),
+    field('imo', 'IMO number', { inputmode: 'numeric' }), field('flag', 'Flag'),
+    h('h3', {}, 'Data'),
+    h('p', { class: 'hint' }, `${Object.keys(state.days).length} days filled in. Everything is stored only on this device: make a backup now and then.`),
     h('div', { class: 'row buttons' },
-      h('button', { onclick: () => download(store.exportBackup(state), `rusttijden-backup-${today()}.json`) }, 'Back-up downloaden'),
-      h('button', { onclick: () => file.click() }, 'Back-up terugzetten'), file,
+      h('button', { onclick: () => download(store.exportBackup(state), `rest-hours-backup-${today()}.json`) }, 'Download backup'),
+      h('button', { onclick: () => file.click() }, 'Restore backup'), file,
     ),
     h('button', { class: 'danger', onclick: () => {
-      if (confirm('Alle ingevulde dagen wissen? Dit kan niet ongedaan worden gemaakt.')) { state.days = {}; store.save(state); render(); }
-    } }, 'Alle dagen wissen'),
+      if (confirm('Delete all filled-in days? This cannot be undone.')) { state.days = {}; store.save(state); render(); }
+    } }, 'Delete all days'),
   );
 }
 

@@ -19,7 +19,7 @@ function fill(start, n, work) {
 test('wacht 00-04 / 12-16 is in orde', () => {
   const r = analyse(fill('2026-10-01', 14, [[0, 4], [12, 16]]), '2026-10-08', '2026-10-14');
   for (const d of Object.values(r)) {
-    assert.equal(d.status, 'groen');
+    assert.equal(d.status, 'ok');
     assert.equal(d.restDay, 16);
     assert.equal(d.rest7, 112);
   }
@@ -27,14 +27,14 @@ test('wacht 00-04 / 12-16 is in orde', () => {
 
 test('dagwerker 08-12 / 13-17: lunchpauze geeft geen fout over rustblokken', () => {
   const r = analyse(fill('2026-10-01', 14, [[8, 12], [13, 17]]), '2026-10-08', '2026-10-14');
-  for (const d of Object.values(r)) assert.equal(d.status, 'groen', JSON.stringify(d.issues));
+  for (const d of Object.values(r)) assert.equal(d.status, 'ok', JSON.stringify(d.issues));
 });
 
 test('16 uur werken (06-22) geeft te weinig rust en te lang doorwerken', () => {
   const days = fill('2026-10-01', 7, [[0, 4], [12, 16]]);
   days['2026-10-08'] = day([[6, 22]]);
   const r = analyse(days, '2026-10-08', '2026-10-08')['2026-10-08'];
-  assert.equal(r.status, 'rood');
+  assert.equal(r.status, 'breach');
   assert.ok(r.issues.some(i => i.rule === 'rest24h'));
   assert.ok(r.issues.some(i => i.rule === 'work'));
 });
@@ -57,18 +57,18 @@ test('77 uur per week: elke dag 13 u werk is te veel', () => {
 
 test('niet-ingevulde dagen geven geen valse waarschuwingen', () => {
   const r = analyse({ '2026-10-08': day([[0, 4], [12, 16]]) }, '2026-10-07', '2026-10-09');
-  assert.equal(r['2026-10-07'].status, 'leeg');
-  assert.equal(r['2026-10-08'].status, 'groen');
+  assert.equal(r['2026-10-07'].status, 'empty');
+  assert.equal(r['2026-10-08'].status, 'ok');
   assert.equal(r['2026-10-08'].rest7, null);
 });
 
-test('5/3-wachten: alle drie de ploegen zijn in orde', async () => {
+test('5/3 watches: all three crews are ok', async () => {
   const { TEMPLATES, templateSlots } = await import('../js/templates.js');
   for (const t of TEMPLATES.filter(t => t.id.startsWith('v53'))) {
     const days = {};
     for (let i = 0; i < 14; i++) days[addDays('2026-10-01', i)] = templateSlots(t);
     for (const [iso, d] of Object.entries(analyse(days, '2026-10-08', '2026-10-14'))) {
-      assert.equal(d.status, 'groen', `${t.name} op ${iso}: ${d.issues.map(x => x.text).join(' ')}`);
+      assert.equal(d.status, 'ok', `${t.name} op ${iso}: ${d.issues.map(x => x.text).join(' ')}`);
       assert.equal(d.restDay, 16);
     }
   }
@@ -77,4 +77,21 @@ test('5/3-wachten: alle drie de ploegen zijn in orde', async () => {
 test('werkperiodes als tekst', () => {
   assert.equal(workPeriodsText(day([[0, 4], [12, 16]])), '00:00-04:00 12:00-16:00');
   assert.equal(workPeriodsText(day([[20, 24]])), '20:00-24:00');
+});
+
+test('advance warning: one double shift gives one warning', async () => {
+  const { upcomingWarnings } = await import('../js/rules.js');
+  const days = fill('2026-10-15', 14, [[5, 10], [16, 19]]);
+  days['2026-10-25'] = day([[6, 22]]);
+  const w = upcomingWarnings(days, '2026-10-22');
+  assert.equal(w.length, 1);
+  assert.equal(w[0].day, '2026-10-24');
+  assert.equal(w[0].lastDay, '2026-10-25');
+  assert.equal(w[0].title, 'Not enough rest Sat 24 Oct to Sun 25 Oct');
+  assert.match(w[0].text, /^Less than 10 h rest in 24 h/);
+});
+
+test('advance warning: good roster gives no warnings', async () => {
+  const { upcomingWarnings } = await import('../js/rules.js');
+  assert.equal(upcomingWarnings(fill('2026-10-15', 14, [[5, 10], [16, 19]]), '2026-10-22').length, 0);
 });
